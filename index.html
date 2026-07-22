@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pattern Memory - Neon Mind Challenge</title>
-  <meta name="description" content="A modern, high-performance glassmorphism pattern memory game with sound effects, dynamic levels, timer, confetti, and local high score tracking.">
+  <title>Smart Memory Game - Mind Challenge</title>
+  <meta name="description" content="A modern, high-performance glassmorphism smart memory game with timer, lives, hints, random themes, accuracy tracking, achievements, and statistics.">
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,7 +12,7 @@
   <!-- CSS stylesheet -->
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body data-theme="neon">
   <!-- Ambient background glow elements -->
   <div class="ambient-glow orb-1"></div>
   <div class="ambient-glow orb-2"></div>
@@ -20,6 +20,17 @@
 
   <!-- Confetti Canvas -->
   <canvas id="confetti-canvas"></canvas>
+
+  <!-- Achievement Toast Notification -->
+  <div id="achievement-toast" class="achievement-toast hidden">
+    <div class="achievement-card animate-pop">
+      <div id="achievement-icon" class="achievement-icon-badge">🏅</div>
+      <div class="achievement-info">
+        <span class="achievement-label">ACHIEVEMENT UNLOCKED!</span>
+        <h3 id="achievement-title" class="achievement-title">Memory Beginner</h3>
+      </div>
+    </div>
+  </div>
 
   <!-- Main Game Container -->
   <main class="game-container glass-card">
@@ -33,7 +44,7 @@
           <span class="dot dot-3"></span>
           <span class="dot dot-4"></span>
         </div>
-        <h1 class="game-title">PATTERN<span class="highlight">MEMORY</span></h1>
+        <h1 class="game-title">SMART<span class="highlight">MEMORY</span></h1>
       </div>
 
       <div class="top-controls">
@@ -43,6 +54,12 @@
           </svg>
           <svg id="sound-icon-off" viewBox="0 0 24 24" class="svg-icon hidden">
             <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73 4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+          </svg>
+        </button>
+
+        <button id="stats-btn" class="icon-btn" title="View Statistics" aria-label="View Statistics">
+          <svg viewBox="0 0 24 24" class="svg-icon">
+            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/>
           </svg>
         </button>
 
@@ -60,18 +77,29 @@
       </div>
     </header>
 
-    <!-- Settings & Mode Selector Bar -->
+    <!-- Settings & Theme Selector Bar -->
     <div class="mode-bar">
-      <label for="difficulty-select" class="mode-label">Mode:</label>
-      <select id="difficulty-select" class="custom-select">
-        <option value="easy">Easy (3x3 - Relaxed)</option>
-        <option value="medium" selected>Medium (3x3 - Standard)</option>
-        <option value="hard">Hard (4x4 - Fast)</option>
-      </select>
+      <div id="theme-badge" class="theme-badge" title="Theme selected randomly per game">
+        <span class="theme-dot"></span>
+        <span id="theme-name">Neon Theme</span>
+      </div>
+
+      <div class="mode-select-group">
+        <label for="difficulty-select" class="mode-label">Mode:</label>
+        <select id="difficulty-select" class="custom-select">
+          <option value="easy">Easy (3x3 - Relaxed)</option>
+          <option value="medium" selected>Medium (3x3 - Standard)</option>
+          <option value="hard">Hard (4x4 - Fast)</option>
+        </select>
+      </div>
     </div>
 
-    <!-- Stats Dashboard -->
-    <section class="stats-dashboard">
+    <!-- Stats Dashboard (Lives, Level, Score, Accuracy, Best) -->
+    <section class="stats-dashboard grid-5-col">
+      <div class="stat-card">
+        <span class="stat-label">LIVES</span>
+        <span id="lives-display" class="stat-value lives-value">❤️❤️❤️</span>
+      </div>
       <div class="stat-card">
         <span class="stat-label">LEVEL</span>
         <span id="level-display" class="stat-value">1</span>
@@ -79,6 +107,10 @@
       <div class="stat-card highlighted">
         <span class="stat-label">SCORE</span>
         <span id="score-display" class="stat-value">0</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">ACCURACY</span>
+        <span id="accuracy-display" class="stat-value">100%</span>
       </div>
       <div class="stat-card">
         <span class="stat-label">BEST</span>
@@ -102,14 +134,26 @@
         <div id="countdown-text" class="countdown-number">3</div>
       </div>
 
+      <!-- Advanced Mode Unlock Overlay -->
+      <div id="unlock-overlay" class="unlock-overlay hidden">
+        <div class="unlock-card animate-pop">
+          <div class="unlock-icon-sparkle">✨</div>
+          <h2 class="unlock-title">🎉 Advanced Mode Unlocked!</h2>
+          <p class="unlock-subtitle">4×4 Board Activated.</p>
+        </div>
+      </div>
+
       <!-- Tile Grid -->
       <div id="tile-grid" class="tile-grid grid-3x3">
         <!-- Dynamic tiles generated by script.js -->
       </div>
     </section>
 
-    <!-- Primary Action Controls -->
+    <!-- Primary Action Controls & Hint Button -->
     <footer class="game-footer">
+      <button id="hint-btn" class="btn hint-btn" title="Replay current pattern (H)" disabled>
+        <span class="btn-icon">💡</span> HINT (<span id="hint-count">3</span>)
+      </button>
       <button id="start-btn" class="btn primary-btn btn-glow">
         <span class="btn-text">START GAME</span>
         <div class="btn-shine"></div>
@@ -121,8 +165,9 @@
 
     <!-- Keyboard Controls Hint Footer -->
     <div class="keyboard-legend">
-      <span><kbd>1-9</kbd> Grid Tiles</span>
+      <span id="key-legend-tiles"><kbd>1-9</kbd> Grid Tiles</span>
       <span><kbd>Space</kbd> Start/Pause</span>
+      <span><kbd>H</kbd> Hint</span>
       <span><kbd>M</kbd> Mute</span>
     </div>
   </main>
@@ -137,7 +182,7 @@
           </svg>
         </div>
         <h2>GAME OVER</h2>
-        <p class="modal-subtitle">Sequence pattern mismatched!</p>
+        <p id="game-over-reason" class="modal-subtitle">All 3 lives lost!</p>
       </div>
 
       <div class="results-summary">
@@ -148,6 +193,10 @@
         <div class="result-row">
           <span>Final Score:</span>
           <strong id="final-score" class="accent-text">0</strong>
+        </div>
+        <div class="result-row">
+          <span>Final Accuracy:</span>
+          <strong id="final-accuracy">100%</strong>
         </div>
         <div class="result-row">
           <span>Best Score:</span>
@@ -190,6 +239,64 @@
     </div>
   </div>
 
+  <!-- STATISTICS MODAL -->
+  <div id="stats-modal" class="modal-overlay hidden">
+    <div class="modal-card glass-modal animate-pop">
+      <div class="modal-header">
+        <div class="modal-icon info">
+          <svg viewBox="0 0 24 24" class="svg-icon-lg">
+            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/>
+          </svg>
+        </div>
+        <h2>STATISTICS</h2>
+        <p class="modal-subtitle">Lifetime player performance record</p>
+      </div>
+
+      <div class="results-summary">
+        <div class="result-row">
+          <span>Games Played:</span>
+          <strong id="stat-games">0</strong>
+        </div>
+        <div class="result-row">
+          <span>Highest Level:</span>
+          <strong id="stat-high-level">1</strong>
+        </div>
+        <div class="result-row">
+          <span>Average Score:</span>
+          <strong id="stat-avg-score">0</strong>
+        </div>
+        <div class="result-row">
+          <span>Best Accuracy:</span>
+          <strong id="stat-best-acc" class="accent-text">100%</strong>
+        </div>
+        <div class="result-row">
+          <span>Total Wins:</span>
+          <strong id="stat-wins" style="color: var(--accent-green);">0</strong>
+        </div>
+        <div class="result-row">
+          <span>Total Losses:</span>
+          <strong id="stat-losses" style="color: var(--accent-magenta);">0</strong>
+        </div>
+      </div>
+
+      <div class="achievements-section">
+        <h4 class="section-title">ACHIEVEMENTS</h4>
+        <div class="achievement-badges-grid">
+          <div id="ach-badge-5" class="ach-badge locked" title="Reach Level 5">🏅 L5: Beginner</div>
+          <div id="ach-badge-10" class="ach-badge locked" title="Reach Level 10">🏆 L10: Master</div>
+          <div id="ach-badge-15" class="ach-badge locked" title="Reach Level 15">👑 L15: Expert</div>
+          <div id="ach-badge-20" class="ach-badge locked" title="Reach Level 20">🌌 L20: Legend</div>
+        </div>
+      </div>
+
+      <div class="modal-actions" style="margin-top: 16px;">
+        <button id="close-stats-btn" class="btn primary-btn full-width">
+          CLOSE
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- HOW TO PLAY MODAL -->
   <div id="help-modal" class="modal-overlay hidden">
     <div class="modal-card glass-modal animate-pop">
@@ -201,13 +308,16 @@
           <li><strong>Watch closely:</strong> A sequence of tiles will light up and play audio notes.</li>
           <li><strong>Repeat the pattern:</strong> Click or press key shortcuts to repeat the exact sequence in order.</li>
           <li><strong>Level Up:</strong> Each successful round adds one extra step to the pattern!</li>
-          <li><strong>Timer & Speed:</strong> Beat the round timer! Higher levels and difficulties play faster sequences.</li>
+          <li><strong>Lives & Timer:</strong> Beat the timer! You have 3 Lives (❤️). Timing out or clicking the wrong tile loses 1 Life.</li>
+          <li><strong>Hint System:</strong> Use 💡 HINT up to 3 times per game to replay the current sequence!</li>
+          <li><strong>Advanced Mode:</strong> Successfully completing Level 5 automatically unlocks the 4×4 grid!</li>
         </ol>
         <div class="key-guide">
           <h4>Keyboard Shortcuts</h4>
           <ul>
-            <li><kbd>Numpad 1-9</kbd> or <kbd>1-9</kbd>: Tap matching grid tile</li>
+            <li><kbd>1-9</kbd> or <kbd>0, Q-Y</kbd>: Tap matching grid tile</li>
             <li><kbd>Spacebar</kbd>: Start or Pause game</li>
+            <li><kbd>H</kbd>: Use Hint</li>
             <li><kbd>M</kbd>: Toggle Audio Mute</li>
           </ul>
         </div>

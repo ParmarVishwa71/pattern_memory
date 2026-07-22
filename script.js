@@ -1,13 +1,19 @@
 /**
  * ============================================================================
- * PATTERN MEMORY GAME - VANILLA JAVASCRIPT ENGINE
+ * SMART MEMORY GAME - VANILLA JAVASCRIPT ENGINE
  * ============================================================================
  * Features:
  * - Web Audio API Synthesizer (custom pitch generation for each tile)
  * - Canvas Particle Confetti FX Engine
- * - Dynamic Grid (3x3 for Easy/Medium, 4x4 for Hard)
+ * - Dynamic Grid (3x3 for Levels 1-5, 4x4 Advanced Mode for Level 6+)
  * - State Machine: Idle, Countdown, Sequence Playback, User Turn, Pause, Game Over
- * - LocalStorage High Score System per Difficulty
+ * - 3 Lives System with Level Retry & Hearts Display
+ * - Hint System (3 per game with pattern replay)
+ * - Accelerating Level Countdown Timer
+ * - 5 Random Board Themes (Neon, Ocean, Sunset, Forest, Dark)
+ * - Real-time Click Accuracy Calculation (%)
+ * - Milestone Achievements System (Levels 5, 10, 15, 20) with Popups
+ * - Lifetime Statistics Storage (Games Played, Best Score, Avg Score, Best Accuracy, Wins/Losses)
  * - Keyboard & Touch Controls
  */
 
@@ -86,7 +92,6 @@ class SoundEngine {
     this.isMuted = false;
   }
 
-  // Lazy init audio context on user gesture
   init() {
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -102,7 +107,6 @@ class SoundEngine {
     return this.isMuted;
   }
 
-  // Play tile musical note
   playTileSound(tileIndex, duration = 0.3) {
     if (this.isMuted) return;
     this.init();
@@ -116,7 +120,6 @@ class SoundEngine {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
 
-      // Smooth attack & decay envelope
       gain.gain.setValueAtTime(0, this.ctx.currentTime);
       gain.gain.linearRampToValueAtTime(0.25, this.ctx.currentTime + 0.03);
       gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
@@ -126,12 +129,9 @@ class SoundEngine {
 
       osc.start();
       osc.stop(this.ctx.currentTime + duration);
-    } catch (err) {
-      console.warn('Audio play error:', err);
-    }
+    } catch (err) {}
   }
 
-  // Play victory fanfare (Major Arpeggio)
   playSuccessFanfare() {
     if (this.isMuted) return;
     this.init();
@@ -160,7 +160,6 @@ class SoundEngine {
     });
   }
 
-  // Play game over descending tone
   playFailSound() {
     if (this.isMuted) return;
     this.init();
@@ -185,7 +184,6 @@ class SoundEngine {
     } catch (e) {}
   }
 
-  // Short click blip sound
   playClickSound() {
     if (this.isMuted) return;
     this.init();
@@ -208,7 +206,6 @@ class SoundEngine {
     } catch (e) {}
   }
 
-  // Countdown beep
   playBeep(isHigh = false) {
     if (this.isMuted) return;
     this.init();
@@ -291,7 +288,7 @@ class ParticleConfetti {
       const p = this.particles[i];
       p.x += p.vx;
       p.y += p.vy;
-      p.vy += 0.25; // Gravity
+      p.vy += 0.25;
       p.rotation += p.vRot;
       p.life -= p.decay;
 
@@ -318,7 +315,7 @@ class ParticleConfetti {
   }
 }
 
-/* --- Main Game Engine --- */
+/* --- Main Smart Memory Game Engine --- */
 class MemoryGame {
   constructor() {
     // Sound & FX Systems
@@ -331,40 +328,69 @@ class MemoryGame {
       level: document.getElementById('level-display'),
       score: document.getElementById('score-display'),
       best: document.getElementById('best-display'),
+      lives: document.getElementById('lives-display'),
+      accuracy: document.getElementById('accuracy-display'),
       statusText: document.getElementById('status-text'),
       timerBar: document.getElementById('timer-bar'),
       startBtn: document.getElementById('start-btn'),
       restartBtn: document.getElementById('restart-btn'),
+      hintBtn: document.getElementById('hint-btn'),
+      hintCount: document.getElementById('hint-count'),
       pauseBtn: document.getElementById('pause-btn'),
       soundBtn: document.getElementById('sound-btn'),
       soundIconOn: document.getElementById('sound-icon-on'),
       soundIconOff: document.getElementById('sound-icon-off'),
       helpBtn: document.getElementById('help-btn'),
+      statsBtn: document.getElementById('stats-btn'),
       difficultySelect: document.getElementById('difficulty-select'),
       countdownOverlay: document.getElementById('countdown-overlay'),
       countdownText: document.getElementById('countdown-text'),
+      unlockOverlay: document.getElementById('unlock-overlay'),
+      keyLegendTiles: document.getElementById('key-legend-tiles'),
+      themeBadge: document.getElementById('theme-badge'),
+      themeName: document.getElementById('theme-name'),
+      achievementToast: document.getElementById('achievement-toast'),
+      achievementIcon: document.getElementById('achievement-icon'),
+      achievementTitle: document.getElementById('achievement-title'),
       
       // Modals
       gameOverModal: document.getElementById('game-over-modal'),
       pauseModal: document.getElementById('pause-modal'),
       helpModal: document.getElementById('help-modal'),
+      statsModal: document.getElementById('stats-modal'),
       
       // Modal stats & actions
       finalLevel: document.getElementById('final-level'),
       finalScore: document.getElementById('final-score'),
+      finalAccuracy: document.getElementById('final-accuracy'),
       finalBest: document.getElementById('final-best'),
       newBestBadge: document.getElementById('new-best-badge'),
+      gameOverReason: document.getElementById('game-over-reason'),
       modalRestartBtn: document.getElementById('modal-restart-btn'),
       resumeBtn: document.getElementById('resume-btn'),
       pauseRestartBtn: document.getElementById('pause-restart-btn'),
-      closeHelpBtn: document.getElementById('close-help-btn')
+      closeHelpBtn: document.getElementById('close-help-btn'),
+      closeStatsBtn: document.getElementById('close-stats-btn'),
+
+      // Lifetime Statistics Elements
+      statGames: document.getElementById('stat-games'),
+      statHighLevel: document.getElementById('stat-high-level'),
+      statAvgScore: document.getElementById('stat-avg-score'),
+      statBestAcc: document.getElementById('stat-best-acc'),
+      statWins: document.getElementById('stat-wins'),
+      statLosses: document.getElementById('stat-losses')
     };
 
     // State Variables
     this.state = 'IDLE'; // 'IDLE', 'COUNTDOWN', 'PLAYING_SEQUENCE', 'USER_TURN', 'PAUSED', 'GAME_OVER'
     this.difficulty = 'medium';
+    this.isAdvancedMode = false;
     this.level = 1;
     this.score = 0;
+    this.lives = 3;
+    this.hintsRemaining = 3;
+    this.totalClicks = 0;
+    this.correctClicks = 0;
     this.sequence = [];
     this.userStep = 0;
     
@@ -373,21 +399,54 @@ class MemoryGame {
     this.turnDuration = 0;
     this.timeRemaining = 0;
 
-    // High Scores (localStorage)
-    this.highScores = this.loadHighScores();
+    // Theme Config
+    this.themes = ['neon', 'ocean', 'sunset', 'forest', 'dark'];
+    this.themeNames = {
+      neon: 'Neon Theme',
+      ocean: 'Ocean Theme',
+      sunset: 'Sunset Theme',
+      forest: 'Forest Theme',
+      dark: 'Dark Theme'
+    };
 
-    // Bound methods for callbacks
+    // Achievements Config
+    this.achievementsConfig = {
+      5: { id: 'ach-badge-5', title: 'Memory Beginner', desc: 'Reached Level 5!', icon: '🏅' },
+      10: { id: 'ach-badge-10', title: 'Memory Master', desc: 'Reached Level 10!', icon: '🏆' },
+      15: { id: 'ach-badge-15', title: 'Memory Expert', desc: 'Reached Level 15!', icon: '👑' },
+      20: { id: 'ach-badge-20', title: 'Memory Legend', desc: 'Reached Level 20!', icon: '🌌' }
+    };
+
+    // Persistent Storage (localStorage)
+    this.highScores = this.loadHighScores();
+    this.stats = this.loadStats();
+    this.unlockedAchievements = this.loadAchievements();
+
     this.init();
   }
 
   /* --- Initialization --- */
   init() {
     this.bindEvents();
+    this.selectRandomTheme();
     this.updateDifficulty();
     this.updateHighScoresDisplay();
+    this.renderLives();
+    this.renderHints();
+    this.updateAccuracyDisplay();
   }
 
-  // Storage helper
+  /* --- Theme System --- */
+  selectRandomTheme() {
+    const randomIdx = Math.floor(Math.random() * this.themes.length);
+    const theme = this.themes[randomIdx];
+    document.body.dataset.theme = theme;
+    if (this.dom.themeName) {
+      this.dom.themeName.textContent = this.themeNames[theme] || 'Neon Theme';
+    }
+  }
+
+  /* --- Storage Helpers --- */
   loadHighScores() {
     try {
       const saved = localStorage.getItem('neon_pattern_memory_bests');
@@ -402,6 +461,113 @@ class MemoryGame {
     try {
       localStorage.setItem('neon_pattern_memory_bests', JSON.stringify(this.highScores));
     } catch (e) {}
+  }
+
+  loadStats() {
+    try {
+      const saved = localStorage.getItem('smart_memory_stats');
+      return saved ? JSON.parse(saved) : {
+        gamesPlayed: 0,
+        highestLevel: 1,
+        totalScore: 0,
+        bestScore: 0,
+        totalClicks: 0,
+        totalCorrectClicks: 0,
+        totalWins: 0,
+        totalLosses: 0
+      };
+    } catch (e) {
+      return { gamesPlayed: 0, highestLevel: 1, totalScore: 0, bestScore: 0, totalClicks: 0, totalCorrectClicks: 0, totalWins: 0, totalLosses: 0 };
+    }
+  }
+
+  recordGameStats(isWin = false) {
+    this.stats.gamesPlayed++;
+    this.stats.totalScore += this.score;
+    this.stats.highestLevel = Math.max(this.stats.highestLevel, this.level);
+    this.stats.bestScore = Math.max(this.stats.bestScore, this.score);
+    this.stats.totalClicks += this.totalClicks;
+    this.stats.totalCorrectClicks += this.correctClicks;
+    if (isWin || this.level >= 5) {
+      this.stats.totalWins++;
+    } else {
+      this.stats.totalLosses++;
+    }
+
+    try {
+      localStorage.setItem('smart_memory_stats', JSON.stringify(this.stats));
+    } catch (e) {}
+
+    this.renderStatsModal();
+  }
+
+  loadAchievements() {
+    try {
+      const saved = localStorage.getItem('smart_memory_achievements');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  checkAchievements(level) {
+    const ach = this.achievementsConfig[level];
+    if (ach && !this.unlockedAchievements.includes(level)) {
+      this.unlockedAchievements.push(level);
+      try {
+        localStorage.setItem('smart_memory_achievements', JSON.stringify(this.unlockedAchievements));
+      } catch (e) {}
+
+      this.showAchievementToast(ach);
+      this.updateAchievementsModalDisplay();
+    }
+  }
+
+  showAchievementToast(ach) {
+    if (!this.dom.achievementToast) return;
+    if (this.dom.achievementIcon) this.dom.achievementIcon.textContent = ach.icon;
+    if (this.dom.achievementTitle) this.dom.achievementTitle.textContent = ach.title;
+
+    this.dom.achievementToast.classList.remove('hidden');
+    this.sound.playSuccessFanfare();
+    this.confetti.burst(65);
+
+    setTimeout(() => {
+      this.dom.achievementToast.classList.add('hidden');
+    }, 3200);
+  }
+
+  updateAchievementsModalDisplay() {
+    Object.keys(this.achievementsConfig).forEach(lvlStr => {
+      const lvl = parseInt(lvlStr, 10);
+      const elem = document.getElementById(`ach-badge-${lvl}`);
+      if (elem) {
+        if (this.unlockedAchievements.includes(lvl)) {
+          elem.classList.remove('locked');
+          elem.classList.add('unlocked');
+        } else {
+          elem.classList.remove('unlocked');
+          elem.classList.add('locked');
+        }
+      }
+    });
+  }
+
+  renderStatsModal() {
+    if (this.dom.statGames) this.dom.statGames.textContent = this.stats.gamesPlayed;
+    if (this.dom.statHighLevel) this.dom.statHighLevel.textContent = this.stats.highestLevel;
+    if (this.dom.statAvgScore) {
+      const avg = this.stats.gamesPlayed === 0 ? 0 : Math.round(this.stats.totalScore / this.stats.gamesPlayed);
+      this.dom.statAvgScore.textContent = avg;
+    }
+    if (this.dom.statBestAcc) {
+      const bestAcc = this.stats.totalClicks === 0 ? 100 : Math.round((this.stats.totalCorrectClicks / this.stats.totalClicks) * 100);
+      this.dom.statBestAcc.textContent = `${bestAcc}%`;
+    }
+    if (this.dom.statWins) this.dom.statWins.textContent = this.stats.totalWins;
+    if (this.dom.statLosses) this.dom.statLosses.textContent = this.stats.totalLosses;
+
+    this.updateAchievementsModalDisplay();
   }
 
   /* --- Event Bindings --- */
@@ -422,6 +588,11 @@ class MemoryGame {
       this.togglePause();
     });
 
+    this.dom.hintBtn.addEventListener('click', () => {
+      this.sound.playClickSound();
+      this.useHint();
+    });
+
     this.dom.soundBtn.addEventListener('click', () => {
       const isMuted = this.sound.toggleMute();
       this.dom.soundIconOn.classList.toggle('hidden', isMuted);
@@ -436,6 +607,17 @@ class MemoryGame {
     this.dom.closeHelpBtn.addEventListener('click', () => {
       this.sound.playClickSound();
       this.closeModal(this.dom.helpModal);
+    });
+
+    this.dom.statsBtn.addEventListener('click', () => {
+      this.sound.playClickSound();
+      this.renderStatsModal();
+      this.openModal(this.dom.statsModal);
+    });
+
+    this.dom.closeStatsBtn.addEventListener('click', () => {
+      this.sound.playClickSound();
+      this.closeModal(this.dom.statsModal);
     });
 
     this.dom.difficultySelect.addEventListener('change', (e) => {
@@ -473,27 +655,35 @@ class MemoryGame {
   /* --- Dynamic Board Generation --- */
   updateDifficulty() {
     const config = CONFIG.difficulties[this.difficulty];
+    const gridSize = this.isAdvancedMode ? 4 : config.gridSize;
+    this.updateGridBoard(gridSize);
+    this.updateHighScoresDisplay();
+  }
+
+  updateGridBoard(gridSize, animateNew = false) {
+    const totalTiles = gridSize === 4 ? 16 : 9;
     this.dom.grid.innerHTML = '';
     
-    // Set CSS grid class
-    if (config.gridSize === 4) {
+    if (gridSize === 4) {
       this.dom.grid.className = 'tile-grid grid-4x4';
     } else {
       this.dom.grid.className = 'tile-grid grid-3x3';
     }
 
-    const keyLabels = config.gridSize === 4 
+    const keyLabels = gridSize === 4 
       ? ['1','2','3','4','5','6','7','8','9','0','Q','W','E','R','T','Y']
       : ['7','8','9','4','5','6','1','2','3'];
 
-    // Generate Tile Elements
-    for (let i = 0; i < config.totalTiles; i++) {
+    for (let i = 0; i < totalTiles; i++) {
       const tile = document.createElement('div');
       tile.className = `tile tile-${i + 1} disabled`;
+      if (animateNew && i >= 9) {
+        tile.classList.add('tile-pop-in');
+        tile.style.animationDelay = `${(i - 9) * 0.08}s`;
+      }
       tile.dataset.index = i;
       tile.dataset.key = keyLabels[i] || (i + 1);
       
-      // Touch & Click Event
       tile.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         this.handleTileInput(i);
@@ -502,7 +692,11 @@ class MemoryGame {
       this.dom.grid.appendChild(tile);
     }
 
-    this.updateHighScoresDisplay();
+    if (this.dom.keyLegendTiles) {
+      this.dom.keyLegendTiles.innerHTML = gridSize === 4 
+        ? '<kbd>1-9, 0, Q-Y</kbd> Grid Tiles' 
+        : '<kbd>1-9</kbd> Grid Tiles';
+    }
   }
 
   updateHighScoresDisplay() {
@@ -510,17 +704,50 @@ class MemoryGame {
     this.dom.best.textContent = best;
   }
 
+  renderLives() {
+    if (this.dom.lives) {
+      const hearts = '❤️'.repeat(Math.max(0, this.lives)) + '🖤'.repeat(Math.max(0, 3 - this.lives));
+      this.dom.lives.textContent = hearts;
+    }
+  }
+
+  renderHints() {
+    if (this.dom.hintCount) {
+      this.dom.hintCount.textContent = this.hintsRemaining;
+    }
+    if (this.dom.hintBtn) {
+      this.dom.hintBtn.disabled = this.hintsRemaining <= 0 || this.state !== 'USER_TURN';
+    }
+  }
+
+  updateAccuracyDisplay() {
+    const percent = this.totalClicks === 0 ? 100 : Math.round((this.correctClicks / this.totalClicks) * 100);
+    if (this.dom.accuracy) {
+      this.dom.accuracy.textContent = `${percent}%`;
+    }
+  }
+
   /* --- Game Flow & State Handlers --- */
   resetToIdle() {
     this.state = 'IDLE';
+    this.isAdvancedMode = false;
     this.level = 1;
     this.score = 0;
+    this.lives = 3;
+    this.hintsRemaining = 3;
+    this.totalClicks = 0;
+    this.correctClicks = 0;
     this.sequence = [];
     this.userStep = 0;
     this.clearTimer();
 
+    this.selectRandomTheme();
     this.dom.level.textContent = '1';
     this.dom.score.textContent = '0';
+    this.renderLives();
+    this.renderHints();
+    this.updateAccuracyDisplay();
+
     this.dom.statusText.textContent = 'Press "Start Game" to begin';
     this.dom.timerBar.style.width = '0%';
     
@@ -529,22 +756,34 @@ class MemoryGame {
     this.dom.pauseBtn.disabled = true;
     this.dom.difficultySelect.disabled = false;
 
+    this.updateGridBoard(3);
     this.setBoardInteractive(false);
   }
 
   startGame() {
     this.sound.init();
+    this.selectRandomTheme();
+    this.isAdvancedMode = false;
     this.level = 1;
     this.score = 0;
+    this.lives = 3;
+    this.hintsRemaining = 3;
+    this.totalClicks = 0;
+    this.correctClicks = 0;
     this.sequence = [];
     
     this.dom.level.textContent = '1';
     this.dom.score.textContent = '0';
+    this.renderLives();
+    this.renderHints();
+    this.updateAccuracyDisplay();
+
     this.dom.startBtn.classList.add('hidden');
     this.dom.restartBtn.classList.remove('hidden');
     this.dom.pauseBtn.disabled = false;
     this.dom.difficultySelect.disabled = true;
 
+    this.updateGridBoard(3);
     this.startRound();
   }
 
@@ -554,12 +793,10 @@ class MemoryGame {
     this.dom.timerBar.style.width = '0%';
     this.dom.level.textContent = this.level;
 
-    // Generate next tile for sequence
-    const config = CONFIG.difficulties[this.difficulty];
-    const nextRandomTile = Math.floor(Math.random() * config.totalTiles);
+    const totalTiles = this.isAdvancedMode ? 16 : CONFIG.difficulties[this.difficulty].totalTiles;
+    const nextRandomTile = Math.floor(Math.random() * totalTiles);
     this.sequence.push(nextRandomTile);
 
-    // Run Countdown Phase
     this.runCountdown(() => {
       this.playSequence();
     });
@@ -569,6 +806,7 @@ class MemoryGame {
   runCountdown(onComplete) {
     this.state = 'COUNTDOWN';
     this.setBoardInteractive(false);
+    this.renderHints();
     this.dom.statusText.textContent = 'Get Ready...';
     this.dom.countdownOverlay.classList.remove('hidden');
 
@@ -597,9 +835,9 @@ class MemoryGame {
     this.state = 'PLAYING_SEQUENCE';
     this.dom.statusText.textContent = 'Watch the pattern closely...';
     this.setBoardInteractive(false);
+    this.renderHints();
 
     const config = CONFIG.difficulties[this.difficulty];
-    // Calculate playback speed (accelerates as levels advance)
     const speed = Math.max(
       config.minSpeed, 
       config.baseSpeed - ((this.level - 1) * config.speedStep)
@@ -608,7 +846,7 @@ class MemoryGame {
 
     let step = 0;
     const playStep = () => {
-      if (this.state !== 'PLAYING_SEQUENCE') return; // Handles pause/quit edge case
+      if (this.state !== 'PLAYING_SEQUENCE') return;
 
       if (step < this.sequence.length) {
         const tileIdx = this.sequence[step];
@@ -617,9 +855,8 @@ class MemoryGame {
           setTimeout(playStep, gap);
         });
       } else {
-        // Playback finished -> Start player turn!
         setTimeout(() => {
-          this.startUserTurn();
+          this.startUserTurn(true);
         }, 200);
       }
     };
@@ -643,15 +880,19 @@ class MemoryGame {
   }
 
   /* --- Player Turn & Input Verification --- */
-  startUserTurn() {
+  startUserTurn(resetStep = true) {
     this.state = 'USER_TURN';
-    this.userStep = 0;
+    if (resetStep) {
+      this.userStep = 0;
+    }
     this.dom.statusText.textContent = 'Your turn! Repeat the pattern.';
     this.setBoardInteractive(true);
+    this.renderHints();
 
-    // Calculate Turn Timer
+    // Accelerating Turn Timer
     const config = CONFIG.difficulties[this.difficulty];
-    this.maxTurnTime = this.sequence.length * config.timeMultiplier;
+    const timeMultiplier = Math.max(900, config.timeMultiplier - ((this.level - 1) * 60));
+    this.maxTurnTime = this.sequence.length * timeMultiplier;
     this.timeRemaining = this.maxTurnTime;
     
     this.startTurnTimer();
@@ -684,27 +925,63 @@ class MemoryGame {
     }
   }
 
+  /* --- Hint System --- */
+  useHint() {
+    if (this.hintsRemaining <= 0 || this.state !== 'USER_TURN') return;
+    this.hintsRemaining--;
+    this.renderHints();
+    this.clearTimer();
+
+    this.state = 'PLAYING_SEQUENCE';
+    this.dom.statusText.textContent = '💡 Hint Replay: Watch pattern again!';
+    this.setBoardInteractive(false);
+
+    const config = CONFIG.difficulties[this.difficulty];
+    const speed = Math.max(config.minSpeed, config.baseSpeed - ((this.level - 1) * config.speedStep));
+    const gap = Math.max(100, Math.floor(speed * 0.35));
+
+    let step = 0;
+    const replayStep = () => {
+      if (step < this.sequence.length) {
+        const tileIdx = this.sequence[step];
+        this.flashTile(tileIdx, speed, () => {
+          step++;
+          setTimeout(replayStep, gap);
+        });
+      } else {
+        setTimeout(() => {
+          this.startUserTurn(false);
+        }, 300);
+      }
+    };
+
+    setTimeout(replayStep, 300);
+  }
+
+  /* --- Tile Input Handler --- */
   handleTileInput(tileIndex) {
     if (this.state !== 'USER_TURN') return;
 
+    this.totalClicks++;
     const expectedTile = this.sequence[this.userStep];
 
-    // User clicked tile
     this.flashTile(tileIndex, 200);
 
     if (tileIndex === expectedTile) {
-      // CORRECT TILE CLICKED
+      // CORRECT TILE
+      this.correctClicks++;
+      this.updateAccuracyDisplay();
       this.userStep++;
 
-      // Check if full sequence matched
       if (this.userStep === this.sequence.length) {
         this.clearTimer();
         this.handleRoundSuccess();
       }
     } else {
-      // INCORRECT TILE CLICKED
+      // INCORRECT TILE
+      this.updateAccuracyDisplay();
       this.clearTimer();
-      this.handleWrongInput('Wrong pattern sequence!');
+      this.handleWrongInput('Wrong sequence step!');
     }
   }
 
@@ -712,27 +989,29 @@ class MemoryGame {
   handleRoundSuccess() {
     this.state = 'IDLE';
     this.setBoardInteractive(false);
+    this.renderHints();
     
-    // Add Points: Level x 10 + Time bonus
+    // Calculate Points
     const timeBonus = Math.floor((this.timeRemaining / this.maxTurnTime) * 20);
     const addedScore = (this.level * 10) + timeBonus;
     this.score += addedScore;
     
     this.dom.score.textContent = this.score;
 
-    // Check & Update High Score
+    // Check Achievements
+    this.checkAchievements(this.level);
+
+    // High Score
     const currentBest = this.highScores[this.difficulty] || 0;
     if (this.score > currentBest) {
       this.saveHighScore(this.difficulty, this.score);
       this.updateHighScoresDisplay();
     }
 
-    // Audio & Visual Effects
     this.sound.playSuccessFanfare();
     this.dom.grid.classList.add('success-glow');
     this.dom.level.classList.add('text-bounce');
 
-    // Launch Confetti on milestone levels (every 3 levels or score > 100)
     if (this.level % 3 === 0 || this.score > currentBest) {
       this.confetti.burst(75);
     }
@@ -743,22 +1022,73 @@ class MemoryGame {
       this.dom.grid.classList.remove('success-glow');
       this.dom.level.classList.remove('text-bounce');
       this.level++;
-      this.startRound();
+
+      // Auto Advanced Mode at Level 6
+      if (this.level === 6 && !this.isAdvancedMode) {
+        this.unlockAdvancedMode(() => {
+          this.startRound();
+        });
+      } else {
+        this.startRound();
+      }
     }, 1200);
   }
 
-  /* --- Game Over Handlers --- */
-  handleWrongInput(reasonText) {
-    this.state = 'GAME_OVER';
-    this.setBoardInteractive(false);
-    this.sound.playFailSound();
+  /* --- Advanced Mode Unlock FX --- */
+  unlockAdvancedMode(onComplete) {
+    this.isAdvancedMode = true;
+    this.state = 'IDLE';
+    this.sound.playSuccessFanfare();
+    this.confetti.burst(120);
 
-    // Trigger visual shake & flash red
+    const boardContainer = this.dom.grid.parentElement;
+    if (boardContainer) {
+      boardContainer.classList.add('expansion-glow');
+      setTimeout(() => boardContainer.classList.remove('expansion-glow'), 1000);
+    }
+
+    this.updateGridBoard(4, true);
+
+    if (this.dom.unlockOverlay) {
+      this.dom.unlockOverlay.classList.remove('hidden');
+    }
+    this.dom.statusText.textContent = '🎉 Advanced Mode Unlocked! 4×4 Board Activated.';
+
+    setTimeout(() => {
+      if (this.dom.unlockOverlay) {
+        this.dom.unlockOverlay.classList.add('hidden');
+      }
+      onComplete();
+    }, 2800);
+  }
+
+  /* --- Failure & Life Deduction --- */
+  handleWrongInput(reasonText) {
+    this.clearTimer();
+    this.sound.playFailSound();
+    this.lives--;
+    this.renderLives();
+
     this.dom.grid.classList.add('shake-wrong', 'flash-red');
 
     setTimeout(() => {
       this.dom.grid.classList.remove('shake-wrong', 'flash-red');
-      this.showGameOverModal(reasonText);
+
+      if (this.lives > 0) {
+        // Retry Level with remaining lives
+        this.dom.statusText.textContent = `⚠️ ${reasonText} (-1 Life! ${this.lives} left)`;
+        setTimeout(() => {
+          this.userStep = 0;
+          this.startUserTurn(true);
+        }, 1200);
+      } else {
+        // Game Over - 0 Lives left
+        this.state = 'GAME_OVER';
+        this.setBoardInteractive(false);
+        this.renderHints();
+        this.recordGameStats(false);
+        this.showGameOverModal(reasonText);
+      }
     }, 700);
   }
 
@@ -771,8 +1101,15 @@ class MemoryGame {
       this.updateHighScoresDisplay();
     }
 
+    if (this.dom.gameOverReason) {
+      this.dom.gameOverReason.textContent = `${reasonText} All 3 lives lost!`;
+    }
     this.dom.finalLevel.textContent = this.level;
     this.dom.finalScore.textContent = this.score;
+    if (this.dom.finalAccuracy) {
+      const finalAcc = this.totalClicks === 0 ? 100 : Math.round((this.correctClicks / this.totalClicks) * 100);
+      this.dom.finalAccuracy.textContent = `${finalAcc}%`;
+    }
     this.dom.finalBest.textContent = Math.max(currentBest, this.score);
 
     if (isNewHigh && this.score > 0) {
@@ -799,6 +1136,7 @@ class MemoryGame {
     this.state = 'PAUSED';
     this.clearTimer();
     this.setBoardInteractive(false);
+    this.renderHints();
     this.openModal(this.dom.pauseModal);
   }
 
@@ -808,9 +1146,9 @@ class MemoryGame {
 
     if (this.state === 'USER_TURN') {
       this.setBoardInteractive(true);
+      this.renderHints();
       this.startTurnTimer();
     } else if (this.state === 'PLAYING_SEQUENCE' || this.state === 'COUNTDOWN') {
-      // Re-run round safely if paused mid-sequence
       this.startRound();
     }
   }
@@ -830,21 +1168,30 @@ class MemoryGame {
       return;
     }
 
+    // H key: Hint
+    if (key === 'h') {
+      if (this.state === 'USER_TURN' && this.hintsRemaining > 0) {
+        this.useHint();
+      }
+      return;
+    }
+
     // M key: Mute toggle
     if (key === 'm') {
       this.dom.soundBtn.click();
       return;
     }
 
-    // If active player turn, map keypad / number keys to grid index
+    // Active player turn tile mapping
     if (this.state === 'USER_TURN') {
-      const config = CONFIG.difficulties[this.difficulty];
-      const keyMap = config.gridSize === 4 ? CONFIG.keyMap4x4 : CONFIG.keyMap3x3;
+      const is4x4 = this.isAdvancedMode || (CONFIG.difficulties[this.difficulty].gridSize === 4);
+      const keyMap = is4x4 ? CONFIG.keyMap4x4 : CONFIG.keyMap3x3;
+      const totalTiles = is4x4 ? 16 : 9;
 
       if (key in keyMap) {
         e.preventDefault();
         const tileIdx = keyMap[key];
-        if (tileIdx < config.totalTiles) {
+        if (tileIdx < totalTiles) {
           this.handleTileInput(tileIdx);
         }
       }
@@ -864,11 +1211,11 @@ class MemoryGame {
   }
 
   openModal(modalElem) {
-    modalElem.classList.remove('hidden');
+    if (modalElem) modalElem.classList.remove('hidden');
   }
 
   closeModal(modalElem) {
-    modalElem.classList.add('hidden');
+    if (modalElem) modalElem.classList.add('hidden');
   }
 }
 
